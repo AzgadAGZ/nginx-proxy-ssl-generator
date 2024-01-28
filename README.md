@@ -1,0 +1,1 @@
+# Nginx Proxy with auto generator and SSL verification

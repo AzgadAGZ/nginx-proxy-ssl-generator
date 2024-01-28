@@ -1,0 +1,67 @@
+version: '3.8'
+services:
+
+  # Separamos esto en 3 contenedores:
+  #   - nginx
+  #   - docker-gen
+  #   - acme-companion
+  # La razón es que no queremos exponer el socket de docker en el nginx que está publico
+  
+  # Simple nginx con volumes compartidos para docker-gen y acme companion
+  nginx-proxy:
+    image: nginx:1.25.3
+    container_name: $NGINX_HOSTNAME
+    hostname: $NGINX_HOSTNAME
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DEFAULT_HOST: grafana.local
+    volumes:
+      - conf:/etc/nginx/conf.d
+      - vhost:/etc/nginx/vhost.d
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+    restart: unless-stopped
+  
+  # Simple nginx con volumes compartidos para docker-gen y acme companion
+  nginx-proxy-gen:
+    container_name: $DOCKER_GEN_HOSTNAME
+    hostname: $DOCKER_GEN_HOSTNAME
+    image: nginxproxy/docker-gen:0.11.1
+    command: -notify-sighup $NGINX_HOSTNAME -watch -wait 5s:30s /etc/docker-gen/templates/nginx.tmpl /etc/nginx/conf.d/default.conf
+    volumes:
+      - conf:/etc/nginx/conf.d
+      - vhost:/etc/nginx/vhost.d
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      # Archivo template, puede usarse de manera local o subirlo a GH
+      - ./config/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro
+      # Socket de Docker en read-only
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    restart: unless-stopped
+
+  acme-companion:
+      image: nginxproxy/acme-companion:2.2.10
+      container_name: $ACME_COMP_HOSTNAME
+      hostname: $ACME_COMP_HOSTNAME
+      volumes:
+        - conf:/etc/nginx/conf.d
+        - vhost:/etc/nginx/vhost.d
+        - certs:/etc/nginx/certs
+        - html:/usr/share/nginx/html
+        - acme:/etc/acme.sh
+        # Socket de Docker en read-only
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+      environment:
+        - DEFAULT_EMAIL='$DEFAULT_EMAIL'
+        - NGINX_PROXY_CONTAINER=$DOCKER_GEN_HOSTNAME
+      restart: unless-stopped
+
+
+volumes:
+  conf:
+  vhost:
+  html:
+  certs:
+  acme:
